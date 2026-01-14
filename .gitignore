@@ -1,0 +1,4 @@
+./node_modules
+./pacakge-lock.json
+.DS_Store
+.env
