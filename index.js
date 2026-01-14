@@ -9,17 +9,20 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 
-const MONGODB_URI = process.env.MONGODB_URI;
-const DB_NAME = process.env.DB_NAME || "flusec";
+const MONGODBURI = process.env.MONGODBURI;
+const DBNAME = process.env.DBNAME || "flusec";
 const PORT = Number(process.env.PORT || 8080);
 
-if (!MONGODB_URI) {
+if (!MONGODBURI) {
   throw new Error("MONGODB_URI is required");
 }
 
-const client = new MongoClient(MONGODB_URI);
+console.log("[boot] MONGODBURI exists =", !!process.env.MONGODBURI);
+console.log("[boot] DBNAME =", DBNAME);
+
+const client = new MongoClient(MONGODBURI);
 await client.connect();
-const db = client.db(DB_NAME);
+const db = client.db(DBNAME);
 const batches = db.collection("finding_batches");
 
 // Basic health
