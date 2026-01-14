@@ -38,7 +38,7 @@ async function githubUsernameFromToken(token) {
   }
 
   const data = await r.json();
-  if (!data?.login) throw new Error("GitHub response missing login");
+  if (!data?.login) throw new Error("GitHub response missing login"); 
   return data.login;
 }
 
