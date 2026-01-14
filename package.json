@@ -1,14 +1,28 @@
 {
   "name": "flusec-cloud",
   "version": "1.0.0",
-  "type": "module",
-  "main": "server.js",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FLUSEC-25-26/flusec-cloud.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/FLUSEC-25-26/flusec-cloud/issues"
+  },
+  "homepage": "https://github.com/FLUSEC-25-26/flusec-cloud#readme",
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.19.2",
-    "mongodb": "^6.8.0"
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mongodb": "^7.0.0"
   }
 }

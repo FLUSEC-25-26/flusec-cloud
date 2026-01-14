@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import { MongoClient } from "mongodb";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -17,7 +20,7 @@ if (!MONGODB_URI) {
 const client = new MongoClient(MONGODB_URI);
 await client.connect();
 const db = client.db(DB_NAME);
-const batches = db.collection("HSD_findings");
+const batches = db.collection("finding_batches");
 
 // Basic health
 app.get("/health", (req, res) => res.json({ ok: true }));
@@ -38,7 +41,7 @@ async function githubUsernameFromToken(token) {
   }
 
   const data = await r.json();
-  if (!data?.login) throw new Error("GitHub response missing login"); 
+  if (!data?.login) throw new Error("GitHub response missing login");
   return data.login;
 }
 
