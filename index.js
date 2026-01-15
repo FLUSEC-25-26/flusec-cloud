@@ -11,10 +11,10 @@ app.use(express.json({ limit: "5mb" }));
 
 const MONGODBURI = process.env.MONGODBURI;
 const DBNAME = process.env.DBNAME || "flusec";
-const PORT = Number(process.env.PORT || 8080);
+const PORT = Number(process.env.PORT || 8082);
 
 if (!MONGODBURI) {
-  throw new Error("MONGODB_URI is required");
+  throw new Error("MONGODBURI is required");
 }
 
 console.log("[boot] MONGODBURI exists =", !!process.env.MONGODBURI);
@@ -23,7 +23,7 @@ console.log("[boot] DBNAME =", DBNAME);
 const client = new MongoClient(MONGODBURI);
 await client.connect();
 const db = client.db(DBNAME);
-const batches = db.collection("finding_batches");
+const batches = db.collection("hardcoded_secrets_detection");
 
 // Basic health
 app.get("/health", (req, res) => res.json({ ok: true }));
@@ -32,10 +32,10 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 async function githubUsernameFromToken(token) {
   const r = await fetch("https://api.github.com/user", {
     headers: {
-      "Authorization": `Bearer ${token}`,
-      "Accept": "application/vnd.github+json",
-      "User-Agent": "flusec-cloud"
-    }
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "flusec-cloud",
+    },
   });
 
   if (!r.ok) {
@@ -49,16 +49,54 @@ async function githubUsernameFromToken(token) {
 }
 
 /**
+ * Normalize request body to a list of workspace payloads.
+ * Supports:
+ *  1) Multi-workspace:
+ *     { extensionVersion, generatedAt, workspaces: [ {workspaceName, workspaceId, findings, ...}, ... ] }
+ *  2) Flat (legacy):
+ *     { workspaceName, workspaceId, extensionVersion, generatedAt, findings: [...] }
+ */
+function normalizeToWorkspaces(body) {
+  // Multi-workspace
+  if (body && Array.isArray(body.workspaces)) {
+    return body.workspaces.map((w) => ({
+      workspaceId: String(w?.workspaceId || ""),
+      workspaceName: String(w?.workspaceName || ""),
+      extensionVersion: String(body?.extensionVersion || w?.extensionVersion || ""),
+      generatedAt: String(body?.generatedAt || w?.generatedAt || new Date().toISOString()),
+      findings: Array.isArray(w?.findings) ? w.findings : [],
+      findingsCount:
+        typeof w?.findingsCount === "number" ? w.findingsCount : (Array.isArray(w?.findings) ? w.findings.length : 0),
+      findingsFile: String(w?.findingsFile || ""),
+    }));
+  }
+
+  // Flat legacy
+  return [
+    {
+      workspaceId: String(body?.workspaceId || ""),
+      workspaceName: String(body?.workspaceName || ""),
+      extensionVersion: String(body?.extensionVersion || ""),
+      generatedAt: String(body?.generatedAt || new Date().toISOString()),
+      findings: Array.isArray(body?.findings) ? body.findings : [],
+      findingsCount:
+        typeof body?.findingsCount === "number" ? body.findingsCount : (Array.isArray(body?.findings) ? body.findings.length : 0),
+      findingsFile: String(body?.findingsFile || ""),
+    },
+  ];
+}
+
+/**
  * POST /v1/findings
  * Headers:
  *   Authorization: Bearer <github_access_token>
- * Body:
+ * Body (multi-workspace recommended):
  *   {
- *     "workspaceId": "optional-stable-id",
- *     "workspaceName": "optional",
  *     "extensionVersion": "0.0.1",
- *     "generatedAt": "ISO date",
- *     "findings": [ ... ]
+ *     "generatedAt": "ISO",
+ *     "workspaces": [
+ *        { "workspaceName": "...", "workspaceId": "", "findings": [...], "findingsCount": 10, "findingsFile": "..." }
+ *     ]
  *   }
  */
 app.post("/v1/findings", async (req, res) => {
@@ -70,25 +108,40 @@ app.post("/v1/findings", async (req, res) => {
     const username = await githubUsernameFromToken(token);
 
     const body = req.body || {};
-    const findings = Array.isArray(body.findings) ? body.findings : [];
+    const workspacePayloads = normalizeToWorkspaces(body);
 
     // Minimal validation
-    if (!Array.isArray(findings)) {
-      return res.status(400).json({ ok: false, error: "findings must be an array" });
+    if (!Array.isArray(workspacePayloads) || workspacePayloads.length === 0) {
+      return res.status(400).json({ ok: false, error: "Invalid payload" });
     }
 
-    const doc = {
+    // Build docs (one per workspace)
+    const docs = workspacePayloads.map((w) => ({
       username,
-      workspaceId: String(body.workspaceId || ""),
-      workspaceName: String(body.workspaceName || ""),
-      extensionVersion: String(body.extensionVersion || ""),
-      generatedAt: String(body.generatedAt || new Date().toISOString()),
+      workspaceId: w.workspaceId,
+      workspaceName: w.workspaceName,
+      extensionVersion: w.extensionVersion,
+      generatedAt: w.generatedAt,
       receivedAt: new Date(),
-      findings
-    };
+      findingsFile: w.findingsFile,
+      findingsCount: Number(w.findingsCount || 0),
+      findings: Array.isArray(w.findings) ? w.findings : [],
+    }));
 
-    const result = await batches.insertOne(doc);
-    return res.json({ ok: true, username, batchId: result.insertedId.toString() });
+    // Insert many docs
+    const result = await batches.insertMany(docs);
+
+    // Return helpful response
+    const insertedIds = Object.values(result.insertedIds).map((id) => id.toString());
+    const totalFindings = docs.reduce((sum, d) => sum + (d.findingsCount || 0), 0);
+
+    return res.json({
+      ok: true,
+      username,
+      batchesInserted: docs.length,
+      totalFindings,
+      batchIds: insertedIds,
+    });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
